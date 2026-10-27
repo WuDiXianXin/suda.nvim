@@ -159,6 +159,13 @@ local function write_range()
   return '1,$'
 end
 
+--- @param range string
+--- @return boolean
+local function whole_range(range)
+  local value = vim.trim(range)
+  return value == '1,$' or value == '%' or value == ('1,%d'):format(vim.fn.line('$'))
+end
+
 function M.bufread(args)
   local buf = current_buf(args)
   local raw_target = args.file or args.match or vim.api.nvim_buf_get_name(buf)
@@ -341,6 +348,7 @@ function M.filewrite(args)
   -- text, or otherwise move '[ and '].
   local name = vim.api.nvim_buf_get_name(buf)
   local range = vim.api.nvim_buf_call(buf, write_range)
+  local preserve_state = not whole_range(range)
   exec_event('FileWritePre', target)
 
   local ok, err = pcall(function()
@@ -349,7 +357,7 @@ function M.filewrite(args)
         range = range,
         cmdarg = vim.v.cmdarg,
         cmdbang = vim.v.cmdbang,
-        preserve_state = true,
+        preserve_state = preserve_state,
       })
     end)
     if name == '' or not io.same_path(target, name) then

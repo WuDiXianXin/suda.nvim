@@ -685,6 +685,20 @@ H.test('FileWriteCmd writes only the requested range', function()
   H.eq(vim.bo.modified, true)
 end)
 
+H.test('FileWriteCmd with a whole range names an unnamed buffer and clears modified', function()
+  H.login()
+  local rel = 'filewrite-unnamed.txt'
+  local target = H.visible(rel)
+  H.normal_buffer({ 'one', 'two' })
+  vim.bo.modified = true
+
+  vim.cmd('1,$write! ' .. vim.fn.fnameescape('suda://' .. target))
+
+  H.eq(vim.api.nvim_buf_get_name(0), 'suda://' .. target)
+  H.eq(vim.bo.modified, false)
+  H.eq(H.read_privileged(rel), 'one\ntwo\n')
+end)
+
 H.test('FileAppendCmd appends only the requested range', function()
   H.login()
   local counts = H.watch({ 'FileAppendPre', 'FileAppendPost' })
