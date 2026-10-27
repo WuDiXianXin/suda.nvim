@@ -210,6 +210,7 @@ function M.bufread(args)
           message, info = io.read(target, {
             range = '1',
             cmdarg = cmdarg,
+            encoding = explicit_encoding,
             detect_fileformat = not binary and explicit_fileformat == nil,
             detect_encoding = not binary and explicit_encoding == nil,
             detect_bomb = not binary and explicit_encoding ~= nil,

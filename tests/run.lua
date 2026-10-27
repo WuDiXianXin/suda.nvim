@@ -48,6 +48,14 @@ local function utf16le(text)
   return table.concat(out)
 end
 
+local function utf16le_no_bom(text)
+  local out = {}
+  for i = 1, #text do
+    out[#out + 1] = text:sub(i, i) .. '\0'
+  end
+  return table.concat(out)
+end
+
 local function utf16be(text)
   local out = { string.char(0xFE, 0xFF) }
   for i = 1, #text do
@@ -1061,6 +1069,24 @@ H.test("a UTF-16LE file without a final newline sets 'endofline'", function()
   vim.bo.fixeol = false
   vim.cmd('write')
   H.eq(H.read_privileged('utf16le-noeol.txt'), utf16le('last line'))
+end)
+
+H.test('an explicit UTF-16LE file without a BOM keeps fileformat and endofline', function()
+  H.login()
+  local rel = 'utf16le-no-bom.txt'
+  local data = utf16le_no_bom('one\r\ntwo\r\n')
+  add_fixture(rel, data)
+  local path = H.visible(rel)
+
+  vim.cmd('edit ++enc=utf-16le ' .. vim.fn.fnameescape('suda://' .. path))
+
+  H.eq(vim.bo.fileencoding, 'utf-16le')
+  H.eq(vim.bo.fileformat, 'dos')
+  H.eq(vim.bo.endofline, true)
+  H.eq(vim.api.nvim_buf_get_lines(0, 0, -1, false), { 'one', 'two' })
+
+  vim.cmd('write')
+  H.eq(H.read_privileged(rel), data)
 end)
 
 H.test('a UTF-16BE file round-trips', function()

@@ -153,6 +153,21 @@ local function is_wide_encoding(encoding)
     or encoding == 'utf-32be'
 end
 
+--- Detect a supported BOM.
+--- @param data string|nil
+--- @return table|nil { fileencoding: string, bomb: boolean }
+local function detect_bom(data)
+  if data == nil then
+    return nil
+  end
+  for _, bom in ipairs(encoding_boms) do
+    if data:sub(1, #bom.bytes) == bom.bytes then
+      return { fileencoding = bom.encoding, bomb = true }
+    end
+  end
+  return nil
+end
+
 --- Detect a BOM or fall back to UTF-8/Latin-1, matching the common Vim
 --- 'fileencodings' default. Other encodings can be selected with ++enc.
 --- @param data string|nil
@@ -162,10 +177,9 @@ local function detect_encoding(data, allow_incomplete)
   if data == nil then
     return nil
   end
-  for _, bom in ipairs(encoding_boms) do
-    if data:sub(1, #bom.bytes) == bom.bytes then
-      return { fileencoding = bom.encoding, bomb = true }
-    end
+  local bom = detect_bom(data)
+  if bom ~= nil then
+    return bom
   end
   if valid_utf8(data, allow_incomplete) then
     return { fileencoding = 'utf-8', bomb = false }
@@ -501,6 +515,7 @@ local function file_fileformat(path)
 end
 
 M.is_wide_encoding = is_wide_encoding
+M.detect_bom = detect_bom
 M.detect_encoding = detect_encoding
 M.detect_encoding_readable = detect_encoding_readable
 M.wide_fileformat = wide_fileformat

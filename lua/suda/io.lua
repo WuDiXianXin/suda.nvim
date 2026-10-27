@@ -99,6 +99,7 @@ end
 --- {opts} supports:
 ---   range:             range passed to :read
 ---   cmdarg:            v:cmdarg (for example " ++bin")
+---   encoding:          explicit file encoding (for example "utf-16le")
 ---   detect_fileformat: set 'fileformat' before reading (BufReadCmd only)
 ---   detect_encoding:   detect 'bomb'/'fileencoding' (BufReadCmd only)
 ---   detect_bomb:       detect 'bomb' when ++enc was given explicitly
@@ -110,12 +111,15 @@ end
 function M.read(expr, opts)
   opts = opts or {}
   local path = M.normalize_target(expr)
+  local explicit_encoding = opts.encoding
 
   local function detected_for(data, allow_incomplete)
-    if not (opts.detect_encoding or opts.detect_bomb) then
-      return nil
+    if opts.detect_encoding then
+      return enc.detect_encoding(data, allow_incomplete)
+    elseif opts.detect_bomb then
+      return enc.detect_bom(data)
     end
-    return enc.detect_encoding(data, allow_incomplete)
+    return nil
   end
 
   local function read_options(encoding)
@@ -148,7 +152,7 @@ function M.read(expr, opts)
     if opts.detect_encoding or opts.detect_bomb then
       detected = enc.detect_encoding_readable(path, not opts.detect_encoding)
     end
-    local encoding = detected and detected.fileencoding or nil
+    local encoding = explicit_encoding or (detected and detected.fileencoding) or nil
     local bomb = detected and detected.bomb or nil
 
     local fileformat
@@ -225,7 +229,7 @@ function M.read(expr, opts)
     local res = runner.run({ 'cat', path })
     local data = res.stdout
     local detected = detected_for(data, false)
-    local encoding = detected and detected.fileencoding or nil
+    local encoding = explicit_encoding or (detected and detected.fileencoding) or nil
     local bomb = detected and detected.bomb or nil
     local fileformat
     local endofline
