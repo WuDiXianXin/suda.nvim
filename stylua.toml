@@ -1,7 +1,25 @@
-column_width = 100
+# 仅支持 LuaJIT 语法
+syntax = "LuaJIT"
+
+# 行宽限制
+column_width = 120
+
+# 使用Unix风格换行符
 line_endings = "Unix"
-indent_type = "Spaces"
-indent_width = 2
-quote_style = "AutoPreferSingle"
-call_parentheses = "Always"
-collapse_simple_statement = "Never"
+
+# 缩进配置
+indent_type = "Spaces"  # 使用空格而非Tab
+indent_width = 4        # 4空格缩进
+
+# 字符串引号偏好
+quote_style = "AutoPreferSingle"  # 自动选择，优先单引号
+
+# 函数调用括号
+call_parentheses = "Always"  # 总是保留括号
+
+# 不折叠简单语句
+# collapse_simple_statement = "Never"
+
+# 禁用require语句排序（关键，避免打乱Neovim配置顺序）
+[sort_requires]
+enabled = false
