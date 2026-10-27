@@ -259,6 +259,7 @@ function M.fileread(args)
       range = range,
       cmdarg = vim.v.cmdarg,
     })
+    io.set_alternate(target)
     echo(message)
   end)
 
@@ -278,6 +279,7 @@ function M.bufwrite(args)
   -- BufWriteCmd means the whole buffer is being written. Capture this before
   -- BufWritePre: a user autocommand may change '[ and '], but must not change
   -- the range that is saved.
+  local name = vim.api.nvim_buf_get_name(buf)
   local range = '1,$'
   exec_event('BufWritePre', target)
 
@@ -292,6 +294,8 @@ function M.bufwrite(args)
 
     if io.same_path(target, vim.api.nvim_buf_get_name(buf)) then
       vim.bo[buf].modified = false
+    elseif name ~= '' and not io.same_path(target, name) then
+      io.set_alternate(target)
     end
 
     echo(message)
@@ -312,6 +316,7 @@ function M.filewrite(args)
 
   -- Capture the range before FileWritePre: the autocommand may yank, change
   -- text, or otherwise move '[ and '].
+  local name = vim.api.nvim_buf_get_name(buf)
   local range = vim.api.nvim_buf_call(buf, write_range)
   exec_event('FileWritePre', target)
 
@@ -321,8 +326,12 @@ function M.filewrite(args)
         range = range,
         cmdarg = vim.v.cmdarg,
         cmdbang = vim.v.cmdbang,
+        preserve_state = true,
       })
     end)
+    if name == '' or not io.same_path(target, name) then
+      io.set_alternate(target)
+    end
     echo(message)
   end)
 
@@ -340,6 +349,7 @@ function M.fileappend(args)
   ensure_suda_buffer(buf)
 
   -- Capture the range before FileAppendPre for the same reason as FileWritePre.
+  local name = vim.api.nvim_buf_get_name(buf)
   local range = vim.api.nvim_buf_call(buf, write_range)
   exec_event('FileAppendPre', target)
 
@@ -351,6 +361,9 @@ function M.fileappend(args)
         cmdbang = vim.v.cmdbang,
       })
     end)
+    if name == '' or not io.same_path(target, name) then
+      io.set_alternate(target)
+    end
     echo(message)
   end)
 

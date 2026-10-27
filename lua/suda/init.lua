@@ -98,7 +98,9 @@ end
 --- @return string message
 --- @return table info
 function M.read(expr, opts)
-  return io.read(expr, opts)
+  local message, info = io.read(expr, opts)
+  io.set_alternate(expr)
+  return message, info
 end
 
 --- Write the current buffer to a file using sudo if necessary.
@@ -106,7 +108,12 @@ end
 --- @param opts table|nil
 --- @return string
 function M.write(expr, opts)
-  return io.write(expr, opts)
+  local name = vim.api.nvim_buf_get_name(0)
+  local message = io.write(expr, opts)
+  if name ~= '' and not io.same_path(expr, name) then
+    io.set_alternate(expr)
+  end
+  return message
 end
 
 --- Append the current buffer to a file using sudo if necessary.
@@ -114,7 +121,12 @@ end
 --- @param opts table|nil
 --- @return string
 function M.append(expr, opts)
-  return io.append(expr, opts)
+  local name = vim.api.nvim_buf_get_name(0)
+  local message = io.append(expr, opts)
+  if name == '' or not io.same_path(expr, name) then
+    io.set_alternate(expr)
+  end
+  return message
 end
 
 --- Run an argv list with sudo. Throws on a non-zero exit code.

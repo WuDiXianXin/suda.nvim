@@ -26,7 +26,7 @@ end
 
 local function read_command(path, opts)
   local range = tostring(opts.range or '')
-  local command = 'noautocmd '
+  local command = 'noautocmd keepalt '
     .. range
     .. 'read'
     .. normalize_cmdarg(opts.cmdarg)
@@ -36,14 +36,16 @@ local function read_command(path, opts)
   return (output:gsub('^\r?\n', ''))
 end
 
-local function write_command(path, opts)
+local function write_command(path, opts, append)
   local range = tostring(opts.range or '')
   local bang = (opts.cmdbang == true or opts.cmdbang == 1) and '!' or ''
-  local command = 'noautocmd '
+  local redirect = append == true and ' >>' or ''
+  local command = 'noautocmd keepalt '
     .. range
     .. 'write'
     .. bang
     .. normalize_cmdarg(opts.cmdarg)
+    .. redirect
     .. ' '
     .. vim.fn.fnameescape(path)
   local output = vim.api.nvim_exec2(command, { output = true }).output
@@ -55,9 +57,41 @@ local function display_path(path)
 end
 
 local function replace_path(message, from, to)
-  return (message:gsub(vim.pesc(from), function()
-    return to
-  end))
+  local variants = { from, display_path(from) }
+  for _, variant in ipairs(variants) do
+    if variant ~= '' then
+      message = message:gsub(vim.pesc(variant), function()
+        return to
+      end)
+    end
+  end
+  return message
+end
+
+--- Return the buffer name or |:read|/|:write| target in the form the user
+--- supplied it, but with an absolute path.
+--- @param expr string
+--- @return string
+local function target_name(expr)
+  local raw = tostring(expr or '')
+  local path = M.normalize_target(raw)
+  if M.strip_prefix(raw) ~= raw then
+    return 'suda://' .. path
+  end
+  return path
+end
+
+--- Make {expr} the alternate file, like the built-in :read/:write commands do.
+--- The target must be a known buffer name, so add it as an unloaded buffer
+--- first, matching what :read and :write do for files that are not open.
+--- @param expr string
+function M.set_alternate(expr)
+  local ok, name = pcall(target_name, expr)
+  if not ok or name == '' then
+    return
+  end
+  pcall(vim.fn.bufadd, name)
+  pcall(vim.fn.setreg, '#', name)
 end
 
 --- Read a file into the current buffer via :read.
@@ -336,6 +370,44 @@ local function copy_to_target(tempfile, path, append)
   dd_to_target(tempfile, path, append)
 end
 
+--- @param range string|nil
+--- @return boolean
+local function is_whole_range(range)
+  if range == nil then
+    return true
+  end
+  local value = vim.trim(tostring(range))
+  if value == '' or value == '%' or value == '1,$' then
+    return true
+  end
+  return value == '1,' .. vim.fn.line('$')
+end
+
+--- Set a buffer-local option without firing OptionSet autocommands.
+--- @param buf integer
+--- @param name string
+--- @param value string
+local function set_local_option(buf, name, value)
+  pcall(vim.api.nvim_buf_call, buf, function()
+    vim.cmd(('noautocmd setlocal %s=%s'):format(name, vim.fn.escape(value, ' \\|')))
+  end)
+end
+
+--- @param buf integer
+--- @param name string
+--- @param modified boolean
+local function restore_write_state(buf, name, modified)
+  if not vim.api.nvim_buf_is_valid(buf) then
+    return
+  end
+  if vim.api.nvim_buf_get_name(buf) ~= name then
+    pcall(vim.api.nvim_buf_set_name, buf, name)
+  end
+  if vim.bo[buf].modified ~= modified then
+    vim.bo[buf].modified = modified
+  end
+end
+
 --- Shared implementation for M.write() and M.append().
 --- @param expr string
 --- @param opts table|nil
@@ -367,21 +439,53 @@ local function write_file(expr, opts, append)
   -- "[New]" for a file that may have been overwritten.
   local existed = state.missing ~= true
 
+  local buf = vim.api.nvim_get_current_buf()
+  local old_name = vim.api.nvim_buf_get_name(buf)
+  local old_modified = vim.bo[buf].modified
+  local old_buftype = vim.bo[buf].buftype
+
   local dir = temp.make_tempdir()
   local tempfile = dir .. '/data'
   local ok, result = pcall(function()
-    local message = write_command(tempfile, opts)
+    -- Writing to a temporary file through :write assigns the temporary name
+    -- to an unnamed buffer and clears 'modified'.  A temporary acwrite
+    -- buftype keeps the buffer state intact while the built-in write still
+    -- serializes the requested lines with the correct buffer options.
+    if old_buftype ~= 'acwrite' then
+      set_local_option(buf, 'buftype', 'acwrite')
+    end
+    if append then
+      -- :write >> requires an existing target.
+      temp.write_binary(tempfile, '')
+    end
+    local message = write_command(tempfile, opts, append)
     copy_to_target(tempfile, path, append)
     return message
   end)
+  if old_buftype ~= 'acwrite' then
+    set_local_option(buf, 'buftype', old_buftype)
+  end
   vim.fn.delete(dir, 'rf')
 
   if not ok then
+    restore_write_state(buf, old_name, old_modified)
     error(result, 0)
   end
 
+  if append or opts.preserve_state then
+    restore_write_state(buf, old_name, old_modified)
+  elseif opts.rename_to_target ~= false and is_whole_range(opts.range) then
+    if old_name == '' then
+      local name = opts.target_name or target_name(expr)
+      pcall(vim.api.nvim_buf_set_name, buf, name)
+      vim.bo[buf].modified = false
+    elseif M.same_path(path, old_name) then
+      vim.bo[buf].modified = false
+    end
+  end
+
   result = replace_path(result, tempfile, display_path(path))
-  if existed then
+  if existed and not append then
     result = strip_new_marker(result, path)
   end
 

@@ -703,6 +703,71 @@ H.test('suda.append() appends through the Lua API', function()
   H.eq(H.read_privileged('append-api.txt'), 'api one\napi two\n')
 end)
 
+H.test('suda.write() from an unnamed buffer names the target and clears modified', function()
+  H.login()
+  local rel = 'api-write-unnamed.txt'
+  local target = H.visible(rel)
+  H.normal_buffer({ 'hello' })
+  vim.bo.modified = true
+
+  local message = require('suda').write(target)
+
+  H.eq(vim.api.nvim_buf_get_name(0), target)
+  H.eq(vim.bo.modified, false)
+  H.eq(H.read_privileged(rel), 'hello\n')
+  H.contains(message, vim.fn.fnamemodify(target, ':~'))
+  H.ok(not message:find('/data', 1, true), 'write message should name the target')
+end)
+
+H.test('suda.write() clears modified when writing the buffer to its own file', function()
+  H.login()
+  local rel = 'api-write-own.txt'
+  add_fixture(rel, 'old\n')
+  local target = H.visible(rel)
+  H.normal_buffer({ 'new' })
+  vim.api.nvim_buf_set_name(0, target)
+  vim.bo.modified = true
+
+  require('suda').write(target)
+
+  H.eq(vim.api.nvim_buf_get_name(0), target)
+  H.eq(vim.bo.modified, false)
+  H.eq(H.read_privileged(rel), 'new\n')
+end)
+
+H.test('suda.append() from an unnamed buffer keeps the name and modified state', function()
+  H.login()
+  local rel = 'api-append-unnamed.txt'
+  add_fixture(rel, 'old\n')
+  local target = H.visible(rel)
+  H.normal_buffer({ 'A' })
+  vim.bo.modified = true
+
+  local message = require('suda').append(target)
+
+  H.eq(vim.api.nvim_buf_get_name(0), '')
+  H.eq(vim.bo.modified, true)
+  H.eq(H.read_privileged(rel), 'old\nA\n')
+  H.eq(vim.fn.expand('#'), target)
+  H.contains(message, vim.fn.fnamemodify(target, ':~'))
+end)
+
+H.test('FileAppendCmd from an unnamed buffer keeps the name and modified state', function()
+  H.login()
+  local rel = 'fileappend-unnamed.txt'
+  add_fixture(rel, 'old\n')
+  local target = H.visible(rel)
+  H.normal_buffer({ 'B' })
+  vim.bo.modified = true
+
+  vim.cmd('write >> ' .. vim.fn.fnameescape('suda://' .. target))
+
+  H.eq(vim.api.nvim_buf_get_name(0), '')
+  H.eq(vim.bo.modified, true)
+  H.eq(H.read_privileged(rel), 'old\nB\n')
+  H.eq(vim.fn.expand('#'), 'suda://' .. target)
+end)
+
 H.test('append falls back to tee when dd lacks oflag=append', function()
   H.login()
 
@@ -850,6 +915,31 @@ H.test('suda.read() honors an explicit zero range', function()
   require('suda').read('suda://' .. path, { range = '0' })
 
   H.eq(vim.api.nvim_buf_get_lines(0, 0, -1, false), { 'root only', 'A', 'B' })
+end)
+
+H.test('suda reads and writes keep the alternate file semantics', function()
+  H.login()
+  local first = H.visible('scratch.txt')
+  local previous = H.visible('readable.txt')
+  local target = H.visible('readonly.txt')
+
+  vim.cmd('edit ' .. vim.fn.fnameescape(first))
+  vim.cmd('edit ' .. vim.fn.fnameescape(previous))
+  vim.cmd('SudaRead ' .. vim.fn.fnameescape(target))
+  H.eq(vim.fn.expand('#'), previous)
+
+  H.normal_buffer({})
+  vim.cmd('read ' .. vim.fn.fnameescape('suda://' .. target))
+  H.eq(vim.fn.expand('#'), 'suda://' .. target)
+
+  local source = H.visible('range-source.txt')
+  local write_target = H.visible('alternate-write.txt')
+  vim.cmd('edit ' .. vim.fn.fnameescape(source))
+  vim.api.nvim_buf_set_lines(0, 0, -1, false, { 'alternate' })
+  vim.bo.modified = true
+  vim.cmd('SudaWrite ' .. vim.fn.fnameescape(write_target))
+  H.eq(vim.fn.expand('#'), 'suda://' .. write_target)
+  H.eq(H.read_privileged('alternate-write.txt'), 'alternate\n')
 end)
 
 H.test('binary files round-trip through ++bin', function()
