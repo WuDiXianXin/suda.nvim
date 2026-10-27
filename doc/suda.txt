@@ -1,0 +1,586 @@
+*suda.txt*		suda.nvim - Read and write files with sudo/doas	*suda*
+
+Author:  Original: Alisue <lambdalisue@hashnote.net>
+         Neovim port: WuDiXianXin <https://github.com/WuDiXianXin>
+License: MIT license
+
+==============================================================================
+CONTENTS						*suda-contents*
+
+  1. Introduction ............................. |suda-introduction|
+  2. Requirements ............................. |suda-requirements|
+  3. Installation ............................. |suda-installation|
+  4. Usage .................................... |suda-usage|
+     4.1 Commands ............................. |suda-usage-commands|
+     4.2 suda:// buffers ...................... |suda-usage-uri|
+     4.3 Smart edit ........................... |suda-usage-smart-edit|
+     4.4 Autocommands ......................... |suda-usage-events|
+  5. Configuration ............................ |suda-configuration|
+     5.1 Options .............................. |suda-config-options|
+     5.2 Legacy variables ..................... |suda-config-legacy|
+     5.3 Authentication ....................... |suda-config-auth|
+  6. Commands ................................. |suda-interface-command|
+  7. Functions ................................ |suda-interface-function|
+  8. Health check ............................. |suda-health|
+  9. Security ................................. |suda-security|
+ 10. Troubleshooting .......................... |suda-troubleshooting|
+ 11. Limitations .............................. |suda-limitations|
+ 12. License .................................. |suda-license|
+
+==============================================================================
+INTRODUCTION						*suda-introduction*
+
+suda reads and writes files that the current user cannot access by running a
+privilege escalation command without a shell.  This version is a Neovim
+0.12+ Lua port of lambdalisue/vim-suda:
+	https://github.com/lambdalisue/vim-suda
+Vim is not supported.
+
+The plugin was originally written because the classic trick is awkward and
+fragile: >
+	:w !sudo tee % > /dev/null
+<
+suda instead runs commands directly with an argv list, so spaces, quotes, `%`,
+`#`, `|`, `$()`, and other shell metacharacters in file names are never
+interpreted by a shell.
+
+The interfaces are inspired by sudo.vim but have been redesigned around
+Neovim's Lua API: |vim.system()|, |nvim_create_autocmd()|, and
+|nvim_create_user_command()|.
+
+==============================================================================
+REQUIREMENTS						*suda-requirements*
+
+- Neovim 0.12 or newer.
+- A privilege escalation command:
+  - `sudo` or `sudo-rs`, or
+  - `doas` with passwordless configuration, or
+  - a custom wrapper that accepts a command and its arguments.
+- On Unix-like systems, `dd` (usually provided by coreutils or busybox).
+  `tee` is used as a fallback for `:w >>` when `dd` lacks `oflag=append`.
+- Optional: `test` (normally from coreutils or busybox) for privileged type
+  probing below unsearchable directories.
+- Optional: sudo 1.8.21 or newer with this sudoers setting, to reuse cached
+  credentials: >
+	Defaults timestamp_type = global
+<
+
+==============================================================================
+INSTALLATION						*suda-installation*
+
+With lazy.nvim: >
+	return {
+	  {
+	    'WuDiXianXin/suda.nvim',
+	    -- Load at startup so the commands are registered immediately.
+	    lazy = false,
+	    config = function()
+	      require('suda').setup({
+	        smart_edit = true,
+	      })
+	    end,
+	  }
+	}
+<
+With vim.pack (Neovim 0.12+): >
+	vim.pack.add({
+	  'https://github.com/WuDiXianXin/suda.nvim',
+	})
+
+	require('suda').setup({
+	  smart_edit = true,
+	})
+<
+For the built-in package manager: >
+	mkdir -p ~/.local/share/nvim/site/pack/plugins/start
+	git clone https://github.com/WuDiXianXin/suda.nvim \
+	  ~/.local/share/nvim/site/pack/plugins/start/suda.nvim
+<
+The plugin registers its commands at startup.  |suda.setup()| is only needed
+to change the defaults.  Then run |:checkhealth| `suda` to verify the setup.
+
+==============================================================================
+USAGE							*suda-usage*
+
+------------------------------------------------------------------------------
+4.1 COMMANDS						*suda-usage-commands*
+
+Re-open the current file with sudo: >
+	:SudaRead
+<
+Open an unreadable file with sudo: >
+	:SudaRead /etc/sudoers
+<
+Save the current buffer with sudo: >
+	:SudaWrite
+<
+Write the current buffer to another file with sudo: >
+	:SudaWrite /etc/profile
+<
+|:SudaRead| is equivalent to `:edit suda://{path}` and |:SudaWrite| is
+equivalent to `:write suda://{path}`.  With no argument, both use the current
+buffer name.  Environment variables such as `$HOME` or `${HOME}` are expanded
+in the path, and the usual command-line file modifiers (`%`, `#`, `<cfile>`)
+work before the path is passed to suda.
+
+When |:SudaWrite| writes to the buffer's own file, the buffer becomes
+unmodified.  Writing to a different file leaves the current buffer modified.
+
+After a successful write, suda schedules |:checktime| by default so other
+buffers that visit the same file can notice the change.  Set `checktime` to
+false in |suda.setup()| to disable this.
+
+------------------------------------------------------------------------------
+4.2 SUDA:// BUFFERS					*suda-usage-uri*
+
+The `suda://` prefix can be used directly with |:edit|, |:read|, |:write|, and
+|:saveas|: >
+	" Open the current file through suda
+	:e suda://%
+
+	" Edit /etc/sudoers
+	:e suda:///etc/sudoers
+
+	" Read /etc/sudoers below the cursor
+	:r suda:///etc/sudoers
+
+	" Read /etc/sudoers at the end of the buffer
+	:$r suda:///etc/sudoers
+
+	" Write the whole buffer to /etc/profile
+	:w suda:///etc/profile
+
+	" Write lines 1-10 to a root-owned file
+	:1,10w! suda:///etc/profile
+
+	" Append the whole buffer to a root-owned log
+	:w >> suda:///var/log/example.log
+
+	" Rename the buffer and save it with sudo
+	:saveas suda:///etc/profile
+<
+A buffer opened (or renamed with |:saveas|) as `suda:///path/to/file`:
+
+- has `'buftype'` set to `acwrite`,
+- has `'swapfile'` and `'undofile'` disabled,
+- keeps the real path inside the `suda://` name,
+- uses |BufWriteCmd| when `:write` is used without a range,
+- uses |FileWriteCmd| when a range is used.
+
+Renaming the buffer to an ordinary path with |:saveas| or |:file| restores a
+normal buffer, so it can be written without sudo again.
+
+suda preserves detected `'bomb'`, `'fileencoding'`, `'fileformat'`, and
+`'endofline'` values.  UTF-8/UTF-16/UTF-32 BOMs and UTF-8/Latin-1 text are
+detected automatically.  For other encodings, use an explicit encoding: >
+	:edit ++enc=latin1 suda:///path/to/file
+<
+For binary files use `:edit ++bin suda:///path/to/file` to skip encoding and
+line-ending conversion.
+
+A target that does not exist yet opens as an empty buffer, fires
+|BufNewFile|, and is created on the first successful write.  On Unix, a newly
+created file is owned by root and receives the permissions allowed by root's
+umask.  If an ancestor directory is not searchable, suda cannot distinguish a
+missing file from an inaccessible one.  It does not silently open an empty
+buffer in that case; use |:SudaWrite| to create a file in such a directory.
+
+Reading uses `cat` when the file is not readable by the current user.  Writing
+uses `dd` on Unix, which overwrites the existing inode and therefore preserves
+the owner, permissions, and symlinks of an existing file.  Appending with
+`:w >>` prefers `dd oflag=append`, so it keeps the existing contents and still
+writes through the inode.  If the local `dd` does not support append mode,
+suda falls back to `tee -a`.  Writes are not atomic; an interrupted copy can
+leave a partial file.
+
+------------------------------------------------------------------------------
+4.3 SMART EDIT						*suda-usage-smart-edit*
+
+When `smart_edit` is enabled, suda checks each ordinary buffer once and
+replaces it with a `suda://` buffer when the file is unreadable or unwritable.
+This makes the following work without remembering |:SudaRead|: >
+	$ nvim /etc/hosts
+<
+or: >
+	:e /etc/shadow
+<
+The heuristic is deliberately conservative:
+
+- Readable and writable files are left alone.
+- A new file whose nearest existing parent directory is writable is left
+  alone, because it can be created normally.
+- A new file in an unwritable directory is switched to `suda://`.
+- Directories and other URI-style buffer names are ignored.
+- Modified buffers are left alone, so unsaved changes are never discarded.
+- The check is remembered in `b:suda_smart_edit_checked` and is not repeated.
+
+Neovim does not fire |BufEnter| when opening an unreadable file fails, so a
+second check is scheduled from |BufAdd|.  This fallback is why smart edit can
+switch a buffer slightly after the `:edit` command returns.
+
+Smart edit is disabled by default.  Enable it with: >
+	require('suda').setup({ smart_edit = true })
+<
+or, for compatibility: >
+	let g:suda_smart_edit = 1
+<
+
+------------------------------------------------------------------------------
+4.4 AUTOCOMMANDS					*suda-usage-events*
+
+The suda handlers fire the same Pre/Post events as Neovim does for ordinary
+files, with the `suda://` target as the pattern:
+
+- Reading an existing file: |BufReadPre|, |BufReadPost|.
+- Reading a missing file: |BufNewFile|.
+- `:read suda://...`: |FileReadPre|, |FileReadPost|.
+- Whole-buffer `:write`: |BufWritePre|, |BufWritePost|.
+- Ranged `:write!`: |FileWritePre|, |FileWritePost|.
+- Appending with `:w >>`: |FileAppendPre|, |FileAppendPost|.
+
+Post events are fired only when the operation succeeds.  On failure the error
+is reported through |v:errmsg| and |nvim_err_writeln()|, so `:write` and
+`:read` fail as expected.
+
+|BufReadPost| and |BufNewFile| process modelines like ordinary `:edit`, when
+the 'modeline' option is enabled.
+
+==============================================================================
+CONFIGURATION						*suda-configuration*
+
+------------------------------------------------------------------------------
+5.1 OPTIONS						*suda-config-options*
+
+|suda.setup()| accepts a table.  It may be called more than once; later calls
+merge with earlier ones.  All options are optional.  Unknown option keys are
+ignored with a warning. >
+	require('suda').setup({
+	  executable = 'sudo',
+	  flavor = 'auto',
+	  prompt = 'Password: ',
+	  noninteractive = false,
+	  smart_edit = false,
+	  checktime = true,
+	  timeout = nil,
+	  debug = false,
+	  prompt_password = function(prompt)
+	    return vim.fn.inputsecret(prompt)
+	  end,
+	})
+<
+`executable` (string, default `"sudo"`)
+	Name or absolute path of the privilege command.  It is checked with
+	|executable()| before use.
+
+`flavor` (string, default `"auto"`)
+	How to invoke `executable`:
+	- `"auto"`: `sudo` and `sudo-rs` use the sudo protocol; `doas` uses the
+	  doas protocol; anything else is treated as `"custom"`.
+	- `"sudo"`: authenticate with `-v`, then run commands as
+	  `sudo -n -- {cmd...}`.
+	- `"doas"`: run `doas {cmd...}`, or `doas -n {cmd...}` when
+	  `noninteractive` is true.
+	- `"custom"`: run `{executable} {cmd...}` without adding any options.
+
+`prompt` (string, default `"Password: "`)
+	Prompt shown by the default password function for sudo.
+
+`noninteractive` (boolean, default `false`)
+	Never prompt.  For sudo this relies on cached credentials or passwordless
+	sudo.  For doas it adds `-n`.  It has no effect on `"custom"`.
+
+`smart_edit` (boolean, default `false`)
+	Enable the heuristic described in |suda-usage-smart-edit|.
+
+`checktime` (boolean, default `true`)
+	Schedule |:checktime| after a successful write.
+
+`timeout` (number or nil, default `nil`)
+	Timeout in milliseconds for each external command, passed to
+	|vim.system()|.  It must be a non-negative integer.  A timed-out command
+	fails with exit code 124.  A value of `0` expires immediately; use `nil`
+	to disable the timeout.
+
+`debug` (boolean, default `false`)
+	Send the full command line to |vim.notify()| at DEBUG level before
+	running it.  Passwords are never part of the command line.
+
+`prompt_password` (function, default |inputsecret()|)
+	Called with the prompt string.  It must return the password as a string,
+	or `nil`/an empty string to cancel.  The default wraps |inputsave()| and
+	|inputrestore()|.  The password is written to sudo's stdin and is never
+	stored by suda.
+
+------------------------------------------------------------------------------
+5.2 LEGACY VARIABLES					*suda-config-legacy*
+
+The old global variables are still read for compatibility.  Most are checked
+each time a command runs; `g:suda_smart_edit` is read when |suda.setup()| is
+called.  Options passed explicitly to |suda.setup()| take precedence over
+these variables.
+
+						*g:suda#executable*
+						*g:suda_executable*
+`g:suda#executable` or `g:suda_executable`
+	Privilege command.  Default: `"sudo"`.
+
+						*g:suda#prompt*
+						*g:suda_prompt*
+`g:suda#prompt` or `g:suda_prompt`
+	Password prompt.  Default: `"Password: "`.
+
+						*g:suda#noninteractive*
+						*g:suda_noninteractive*
+						*g:suda#nopass*
+						*g:suda_nopass*
+`g:suda#noninteractive`, `g:suda_noninteractive`, `g:suda#nopass`, or
+`g:suda_nopass`
+	Non-zero means never prompt.  Default: `0`.
+
+						*g:suda_smart_edit*
+`g:suda_smart_edit`
+	Non-zero enables smart edit.  Default: `0`.
+
+In Lua, variables containing `#` need bracket syntax: >
+	vim.g['suda#executable'] = '/usr/local/bin/sudo'
+	vim.g['suda#prompt'] = 'Mot de passe: '
+<
+
+------------------------------------------------------------------------------
+5.3 AUTHENTICATION					*suda-config-auth*
+
+For `flavor = "sudo"` and an interactive session, suda performs two steps:
+
+1. It probes cached credentials with `sudo -n -- true`.
+2. If the probe fails, it calls the password function and authenticates with
+   `sudo -p '' -S -v`, writing the password to stdin.
+3. The real command is then run as `sudo -n -- {cmd...}`.
+
+The password therefore never appears in the process arguments, environment, or
+`:messages`.  suda also never caches it.
+
+sudo normally associates cached credentials with a terminal.  Because suda
+starts a new process for every operation, cached credentials may not be reused
+unless sudoers uses a global timestamp: >
+	Defaults timestamp_type = global
+<
+If your sudo policy uses `tty`, `ppid`, or `kernel` timestamps, expect a
+password prompt for each operation.  Choose a policy that matches your
+security requirements.
+
+`doas` has no `-S`/`-v` equivalent.  Interactive doas authentication is
+delegated to doas and requires a controlling terminal; in practice,
+passwordless doas (`noninteractive`) is the reliable configuration.
+
+A `"custom"` flavor receives the command arguments directly and must handle
+authentication itself.
+
+==============================================================================
+COMMANDS						*suda-interface-command*
+
+							*:SudaRead*
+:SudaRead [{path}]
+	Edit {path} with sudo, or re-open the current buffer when {path} is
+	omitted.  Equivalent to `:edit suda://{path}`.
+
+							*:SudaWrite*
+:SudaWrite [{path}]
+	Write the current buffer to {path} with sudo, or to the current buffer
+	name when {path} is omitted.  Equivalent to `:write suda://{path}`.
+
+==============================================================================
+FUNCTIONS						*suda-interface-function*
+
+Lua API: >
+
+	local suda = require('suda')
+
+------------------------------------------------------------------------------
+							*suda.setup()*
+suda.setup({opts})
+	Configure suda and register its commands and autocommands.  The startup
+	script calls this automatically.  Calling it again is safe.  See
+	|suda-config-options|.
+
+------------------------------------------------------------------------------
+							*suda.read()*
+suda.read({expr} [, {opts}])
+	Read {expr} into the current buffer through |:read|, using sudo when the
+	file is not readable.  Returns the message normally produced by
+	|:read| plus an info table with `endofline`, `fileformat`, `fileencoding`,
+	and `bomb` fields.  This function does not change the buffer name; use
+	|:SudaRead| or `:edit suda://...` for that.
+
+	A typed `:0read suda://...` is recognized from the command line.  Direct
+	`:0read` from mappings or scripts is not detected; call this function with
+	`range = '0'` explicitly instead.
+
+	{opts} fields:
+	  `range`	range passed to |:read| (string)
+	  `cmdarg`	|v:cmdarg| passed to |:read|
+
+------------------------------------------------------------------------------
+							*suda.write()*
+suda.write({expr} [, {opts}])
+	Write the current buffer to {expr} through |:write|, then copy the
+	temporary result to the target with sudo.  Returns the write message.
+
+	{opts} fields:
+	  `range`	range passed to |:write| (string)
+	  `cmdarg`	|v:cmdarg| passed to |:write|
+	  `cmdbang`	|v:cmdbang| (0 or 1)
+
+------------------------------------------------------------------------------
+							*suda.append()*
+suda.append({expr} [, {opts}])
+	Append the current buffer to {expr} through sudo.  This is the Lua
+	equivalent of `:w >> suda://{expr}`.  Returns the write message and
+	throws an error on failure.
+
+	{opts} has the same fields as |suda.write()|.
+
+------------------------------------------------------------------------------
+							*suda.system()*
+suda.system({cmd} [, {input}])
+	Run the argv list {cmd} with the configured privilege command and return
+	stdout.  Throws an error on a non-zero exit status.  {input}, when given,
+	is written to stdin; otherwise stdin is empty.  The command is not run
+	through a shell.
+
+------------------------------------------------------------------------------
+							*suda.systemlist()*
+suda.systemlist({cmd} [, {input}])
+	Like |suda.system()| but split stdout into a list of lines.  A single
+	trailing newline does not produce an extra empty item.
+
+------------------------------------------------------------------------------
+Helpers: >
+	suda.strip_prefix({expr})	remove leading suda:// prefixes
+	suda.normalize_target({expr})	expand $VAR, ~, %, #, and make absolute
+	suda.same_path({left}, {right})	compare two buffer names/paths
+	suda.flavor()			effective flavor for current config
+<
+==============================================================================
+HEALTH CHECK						*suda-health*
+
+Run: >
+	:checkhealth suda
+<
+The report checks the Neovim version, finds the configured executable,
+detects the flavor, shows the sudo version, reports whether credentials are
+cached, checks `dd`/`cat`, the `tee` append fallback, and `test`, and reports
+the smart edit state.
+
+==============================================================================
+SECURITY						*suda-security*
+
+- Commands are executed with an argv list and never through a shell.
+- The sudo password is sent over stdin with `-S`; it is not placed in argv,
+  the environment, or a temporary file.
+- suda does not store the password after the operation.
+- Temporary files are created under a private directory with mode 0700 and
+  are removed after use.  The file contents still exist on disk briefly; do
+  not read secrets on a system where the temporary directory is untrusted.
+- On Unix, `dd` overwrites or appends to the existing inode; `tee -a` is the
+  append fallback.  This preserves ownership, permissions, and symlinks, but
+  it also means the write is not atomic.  A crash during the copy can leave a
+  partially written file.
+- Enabling sudo timestamp caching trades convenience for security.  Use the
+  shortest acceptable `timestamp_timeout` and consider a global timestamp
+  policy only on machines where that is appropriate.
+- `debug = true` logs full command lines, including file names.  Passwords are
+  not logged.
+
+==============================================================================
+TROUBLESHOOTING					*suda-troubleshooting*
+
+`E37: No write since last change`
+	`:SudaRead` uses |:edit|.  Save or discard changes first.
+
+`E139: File is loaded in another buffer`
+	The target path is already open in another buffer, including a
+	`suda://` buffer.  Switch to that buffer and write there, or delete it
+	with |:bdelete| first.  This is standard Neovim behavior for `:write
+	{file}`.
+
+`E140: Use ! to write partial buffer`
+	A ranged write to a file requires a bang: >
+		:1,10w! suda:///etc/profile
+<
+
+`[suda] executable not found`
+	Check the `executable` option, or run: >
+		:echo executable(get(g:, 'suda#executable', 'sudo'))
+<
+Also run |:checkhealth| `suda`.
+
+`[suda] authentication failed`
+	Verify that `sudo -v` works in a terminal.  Check sudoers for
+	`requiretty` (which prevents piped authentication), PAM configuration,
+	and whether the account is allowed to run the target command.
+
+`sudo: a terminal is required to read the password`
+	The sudo policy requires a terminal.  Use passwordless sudo for this
+	Neovim session, or remove `requiretty` from sudoers if your security
+	policy allows it.
+
+`[suda] ... failed (exit N)` or `(signal N)`
+	The message includes stderr from the failed command, for example a
+	missing directory or a permission error from `dd`/`tee`.  `exit 124`
+	means the configured `timeout` expired.
+
+`[suda] file not found: ...`
+	|suda.read()| requires an existing file.  To create a new file, use
+	`:edit suda:///path` or |:SudaRead| with a path in an existing
+	directory, then write.
+
+Smart edit does not switch a buffer
+	Smart edit is disabled by default.  Enable it with |suda.setup()| or
+	`g:suda_smart_edit`.  A new file in a writable directory is intentionally
+	left alone.
+
+Write succeeds but the buffer stays modified
+	The target differs from the buffer name, or a ranged write was used.
+	Use |:SudaWrite| with no argument, or write the whole buffer to its own
+	`suda://` name, to clear `'modified'`.
+
+Reading a missing file shows an empty buffer
+	A `suda://` target that does not exist is treated like a new file when
+	its parent directories are searchable.  The first write creates it.  If
+	suda cannot inspect an ancestor directory, it reports an error instead of
+	opening an empty buffer; use |:SudaWrite| to create the file.
+
+==============================================================================
+LIMITATIONS						*suda-limitations*
+
+- Neovim 0.12 or newer is required.  Vim is not supported.
+- Interactive doas authentication is not implemented by suda; use
+  passwordless doas.
+- Only regular files and symlinks to them are read or written.  FIFOs,
+  sockets, and device files are rejected.
+- Paths below an unsearchable directory are classified with a privileged
+  `test` probe when available.  Systems without `test` cannot detect special
+  files there; set `timeout` defensively.
+- The privileged type probe and the following read/write are separate
+  operations; a path can change between them.  Use `timeout` for paths in
+  directories writable by other users.
+- Writing and appending are not atomic because the temporary file is copied
+  over or appended to the target.
+- Reads and writes buffer the whole file in memory; very large files may be
+  slow or memory-heavy.  Encoding detection scans readable files to validate
+  UTF-8.
+- External commands have no timeout by default.  Set the `timeout` option if a
+  command may hang.
+- The append probe uses the `dd` found on Neovim's PATH.  A different `dd`
+  selected by sudo's `secure_path` may require the `tee -a` fallback.
+
+==============================================================================
+LICENSE							*suda-license*
+
+MIT license.  See the LICENSE file in the repository.
+
+Original project copyright 2017 Alisue, hashnote.net.
+Neovim port copyright 2026 WuDiXianXin.
+
+==============================================================================
+vim:tw=78:fo=tcq2mM:ts=8:ft=help:norl:

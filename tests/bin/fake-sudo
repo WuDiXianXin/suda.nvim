@@ -1,0 +1,247 @@
+#!/usr/bin/env python3
+"""A small fake sudo used by the headless test suite.
+
+It implements only the parts of sudo that suda uses: -n, -S, -p, -v, -k, -V,
+and the cat/dd/tee commands. Paths under SUDA_FAKE_PREFIX are mapped into
+SUDA_FAKE_ROOT so tests can pretend a path is root-owned without running as
+root.
+"""
+
+import json
+import os
+import subprocess
+import sys
+
+
+def env_path(name, default=None):
+    value = os.environ.get(name, default)
+    if value is None:
+        raise SystemExit(f"fake-sudo: missing {name}")
+    return value
+
+
+STATE = env_path("SUDA_FAKE_STATE")
+ROOT = env_path("SUDA_FAKE_ROOT")
+PREFIX = os.environ.get("SUDA_FAKE_PREFIX", "/suda-test/")
+PASSWORD = os.environ.get("SUDA_FAKE_PASSWORD", "secret")
+AUTH = os.path.join(STATE, "auth")
+LOG = os.path.join(STATE, "log.jsonl")
+
+os.makedirs(STATE, exist_ok=True)
+os.makedirs(ROOT, exist_ok=True)
+
+
+def map_path(path):
+    if path.startswith(PREFIX):
+        return os.path.join(ROOT, path[len(PREFIX) :])
+    return path
+
+
+def log(entry):
+    with open(LOG, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+
+def authenticated():
+    return os.path.exists(AUTH)
+
+
+def set_authenticated():
+    with open(AUTH, "w", encoding="utf-8") as handle:
+        handle.write("ok\n")
+    os.chmod(AUTH, 0o600)
+
+
+def clear_authenticated():
+    try:
+        os.remove(AUTH)
+    except FileNotFoundError:
+        pass
+
+
+def read_password():
+    line = sys.stdin.buffer.readline()
+    return line.rstrip(b"\r\n").decode("utf-8", "replace")
+
+
+def finish(code, argv, opts, **extra):
+    entry = {
+        "argv": ["fake-sudo", *argv],
+        "noninteractive": opts["noninteractive"],
+        "validate": opts["validate"],
+        "stdin_password": opts["stdin_password"],
+        "auth": authenticated(),
+        "code": code,
+    }
+    entry.update(extra)
+    log(entry)
+    sys.exit(code)
+
+
+def main():
+    argv = sys.argv[1:]
+    opts = {
+        "noninteractive": False,
+        "stdin_password": False,
+        "validate": False,
+        "version": False,
+    }
+    command = []
+    index = 0
+    while index < len(argv):
+        arg = argv[index]
+        if arg == "--":
+            command = argv[index + 1 :]
+            break
+        if arg in ("-n", "-S", "-v", "-V", "-k", "-A"):
+            if arg == "-n":
+                opts["noninteractive"] = True
+            elif arg == "-S":
+                opts["stdin_password"] = True
+            elif arg == "-v":
+                opts["validate"] = True
+            elif arg == "-V":
+                opts["version"] = True
+            elif arg == "-k":
+                clear_authenticated()
+                finish(0, argv, opts)
+            index += 1
+            continue
+        if arg == "-p":
+            index += 2
+            continue
+        if arg.startswith("-") and not command:
+            # Ignore unknown sudo options for the tests.
+            index += 1
+            continue
+        command = argv[index:]
+        break
+
+    if opts["version"]:
+        sys.stdout.write("Sudo version 1.9.99-fake\nAuthentication timestamp type: global\n")
+        finish(0, argv, opts)
+
+    if opts["validate"]:
+        password = read_password()
+        if password == PASSWORD:
+            set_authenticated()
+            finish(0, argv, opts, password_ok=True)
+        sys.stderr.write("Sorry, try again.\n")
+        finish(1, argv, opts, password_ok=False)
+
+    if opts["stdin_password"]:
+        password = read_password()
+        if password != PASSWORD:
+            sys.stderr.write("Sorry, try again.\n")
+            finish(1, argv, opts, password_ok=False)
+        set_authenticated()
+        payload = sys.stdin.buffer.read()
+    else:
+        payload = b""
+
+    if opts["noninteractive"] and not authenticated():
+        sys.stderr.write("sudo: a password is required\n")
+        finish(1, argv, opts)
+
+    if not authenticated():
+        sys.stderr.write("sudo: a password is required\n")
+        finish(1, argv, opts)
+
+    if not command:
+        sys.stderr.write("fake-sudo: no command\n")
+        finish(1, argv, opts)
+
+    name = command[0]
+    args = command[1:]
+
+    if name == "true":
+        finish(0, argv, opts)
+
+    if name == "test":
+        if not args:
+            finish(1, argv, opts)
+        operation = args[0]
+        target = args[1] if len(args) > 1 else ""
+        mapped = map_path(target)
+        if operation == "-e":
+            present = os.path.exists(mapped)
+        elif operation == "-f":
+            present = os.path.isfile(mapped)
+        elif operation == "-d":
+            present = os.path.isdir(mapped)
+        else:
+            present = False
+        finish(0 if present else 1, argv, opts)
+
+    if name == "signal":
+        # Used by the test suite to verify that signal-terminated commands are
+        # treated as failures even though vim.system() reports code 0.
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os.kill(os.getpid(), int(args[0]) if args else 15)
+        finish(1, argv, opts)
+
+    if name == "cat":
+        for path in args:
+            mapped = map_path(path)
+            try:
+                with open(mapped, "rb") as handle:
+                    sys.stdout.buffer.write(handle.read())
+            except OSError as error:
+                sys.stderr.write(f"cat: {path}: {error.strerror}\n")
+                finish(1, argv, opts)
+        finish(0, argv, opts)
+
+    if name == "dd":
+        source = None
+        target = None
+        append = False
+        for arg in args:
+            if arg.startswith("if="):
+                source = arg[3:]
+            elif arg.startswith("of="):
+                target = arg[3:]
+            elif arg == "oflag=append":
+                append = True
+        if source is None or target is None:
+            sys.stderr.write("dd: missing if= or of=\n")
+            finish(1, argv, opts)
+        try:
+            with open(map_path(source), "rb") as handle:
+                data = handle.read()
+            with open(map_path(target), "ab" if append else "wb") as handle:
+                handle.write(data)
+        except OSError as error:
+            sys.stderr.write(f"dd: {error.strerror}\n")
+            finish(1, argv, opts, append=append)
+        finish(0, argv, opts, append=append)
+
+    if name == "tee":
+        data = payload or sys.stdin.buffer.read()
+        append = False
+        if args and args[0] == "-a":
+            append = True
+            args = args[1:]
+        for path in args:
+            try:
+                with open(map_path(path), "ab" if append else "wb") as handle:
+                    handle.write(data)
+            except OSError as error:
+                sys.stderr.write(f"tee: {error.strerror}\n")
+                finish(1, argv, opts, append=append)
+        sys.stdout.buffer.write(data)
+        finish(0, argv, opts, append=append)
+
+    # Generic commands are useful for testing suda.system().
+    if not payload:
+        payload = sys.stdin.buffer.read()
+    try:
+        result = subprocess.run(command, input=payload)
+    except OSError as error:
+        sys.stderr.write(f"fake-sudo: {error.strerror}\n")
+        finish(1, argv, opts)
+    finish(result.returncode, argv, opts)
+
+
+if __name__ == "__main__":
+    main()
