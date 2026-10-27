@@ -29,7 +29,7 @@
   - `sudo` 或 `sudo-rs`；或
   - 配置为免密的 `doas`；或
   - 接受命令及其参数的自定义包装脚本。
-- Unix 类系统：`dd`（通常来自 coreutils 或 busybox）。当 `dd` 不支持 `oflag=append` 时，`:w >>` 会回退使用 `tee`。
+- Unix 类系统：`dd`（通常来自 coreutils 或 busybox）以及用于特权读取的 `cat`。当 `dd` 不支持 `oflag=append` 时，`:w >>` 会回退使用 `tee`。
 - 可选：`test`（通常来自 coreutils 或 busybox），用于不可搜索目录下的特权类型探测。
 - 可选：sudo 1.8.21+，并在 sudoers 中设置 `Defaults timestamp_type = global`，以复用缓存的凭据。
 
@@ -242,10 +242,12 @@ suda.same_path(left, right)      -- 比较缓冲区名称/路径
 suda.flavor()                    -- 实际生效的 flavor
 ```
 
-`suda.read()` 接受 `range` 和 `cmdarg` 选项。在命令行输入的 `:0read suda://...` 可以被识别；
+`suda.read()` 接受 `range`、`cmdarg` 和 `encoding` 选项。`encoding` 用于显式指定文件编码（例如 `utf-16le`）。在命令行输入的 `:0read suda://...` 可以被识别；
 映射或脚本中的直接 `:0read` 不会被识别，如需 `:0read` 语义请调用 `suda.read(..., { range = '0' })`。
 
 `suda.write()` 和 `suda.append()` 还接受 `cmdbang`。
+
+Lua 辅助函数会像对应的内置命令一样更新 alternate file 和 `'modified'`，但会直接执行 I/O，不会触发 `Buf*`/`File*` 自动命令；需要自动命令时请使用命令或 `suda://` 缓冲区。
 
 `read()` 返回 `:read` 的消息，以及包含 `endofline`、`fileformat`、`fileencoding` 和 `bomb` 字段的信息表；
 
@@ -303,6 +305,8 @@ nvim --headless -u NONE -c 'helptags doc' -c 'qa!'
 - 写入和追加不是原子操作。
 - 读写会把整个文件放入内存；超大文件可能较慢或占用较多内存。编码检测会扫描可读文件以校验 UTF-8。
 - 外部命令默认没有超时。如果命令可能挂起，请设置 `timeout`。
+- append 探测使用 Neovim PATH 中的 `dd`；如果 sudo 的 `secure_path` 选择了不同的 `dd`，可能需要 `tee -a` 回退。
+- 智能编辑会保留 `++bin` 和已加载缓冲区的选项。读取失败后 Neovim 不会暴露显式的 `++enc`，因此智能编辑重新打开不可读文件时无法恢复该选项。
 
 ## 许可证
 

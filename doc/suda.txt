@@ -56,8 +56,9 @@ REQUIREMENTS						*suda-requirements*
   - `sudo` or `sudo-rs`, or
   - `doas` with passwordless configuration, or
   - a custom wrapper that accepts a command and its arguments.
-- On Unix-like systems, `dd` (usually provided by coreutils or busybox).
-  `tee` is used as a fallback for `:w >>` when `dd` lacks `oflag=append`.
+- On Unix-like systems, `dd` (usually provided by coreutils or busybox) and
+  `cat` for privileged reads.  `tee` is used as a fallback for `:w >>` when
+  `dd` lacks `oflag=append`.
 - Optional: `test` (normally from coreutils or busybox) for privileged type
   probing below unsearchable directories.
 - Optional: sudo 1.8.21 or newer with this sudoers setting, to reuse cached
@@ -395,6 +396,11 @@ Lua API: >
 
 	local suda = require('suda')
 
+The Lua helpers update the alternate file and `'modified'` like the
+corresponding built-in commands, but they perform the I/O directly and do not
+fire |BufReadPre|, |BufWritePre|, |FileReadPre|, or similar autocommands.  Use
+the commands or `suda://` buffers when autocommands are required.
+
 ------------------------------------------------------------------------------
 							*suda.setup()*
 suda.setup({opts})
@@ -418,6 +424,7 @@ suda.read({expr} [, {opts}])
 	{opts} fields:
 	  `range`	range passed to |:read| (string)
 	  `cmdarg`	|v:cmdarg| passed to |:read|
+	  `encoding`	explicit file encoding, e.g. `utf-16le` (string)
 
 ------------------------------------------------------------------------------
 							*suda.write()*
@@ -573,6 +580,9 @@ LIMITATIONS						*suda-limitations*
   command may hang.
 - The append probe uses the `dd` found on Neovim's PATH.  A different `dd`
   selected by sudo's `secure_path` may require the `tee -a` fallback.
+- Smart edit preserves `++bin` and the options of a loaded buffer.  Neovim
+  does not expose an explicit `++enc` after a failed read, so that option
+  cannot be recovered when smart edit reopens an unreadable file.
 
 ==============================================================================
 LICENSE							*suda-license*

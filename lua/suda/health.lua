@@ -4,8 +4,8 @@ local config = require('suda.config')
 local runner = require('suda.runner')
 local smart_edit = require('suda.smart_edit')
 
-local function run(argv)
-  local ok, proc = pcall(vim.system, argv, { text = true, timeout = 5000 })
+local function run(argv, timeout)
+  local ok, proc = pcall(vim.system, argv, { text = true, timeout = timeout or 5000 })
   if not ok then
     return nil, tostring(proc)
   end
@@ -46,7 +46,7 @@ function M.check()
   vim.health.info(('flavor: %s'):format(flavor))
 
   if flavor == 'sudo' then
-    local version, version_err = run({ c.executable, '-V' })
+    local version, version_err = run({ c.executable, '-V' }, c.timeout)
     if version == nil then
       vim.health.warn(('sudo -V failed: %s'):format(version_err or 'unknown error'))
     elseif succeeded(version) then
@@ -56,7 +56,7 @@ function M.check()
       vim.health.warn('sudo -V failed')
     end
 
-    local probe, probe_err = run({ c.executable, '-n', '--', 'true' })
+    local probe, probe_err = run({ c.executable, '-n', '--', 'true' }, c.timeout)
     if probe == nil then
       vim.health.warn(('sudo probe failed: %s'):format(probe_err or 'unknown error'))
     elseif succeeded(probe) then

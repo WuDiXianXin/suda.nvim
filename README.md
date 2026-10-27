@@ -26,7 +26,7 @@ Maintainer: [WuDiXianXin](https://github.com/WuDiXianXin)
   - `sudo` or `sudo-rs`, or
   - `doas` with passwordless configuration, or
   - a custom wrapper that accepts a command and its arguments.
-- Unix-like systems: `dd` (usually from coreutils or busybox). `tee` is used as a fallback for `:w >>` when `dd` does not support `oflag=append`.
+- Unix-like systems: `dd` (usually from coreutils or busybox) and `cat` for privileged reads. `tee` is used as a fallback for `:w >>` when `dd` does not support `oflag=append`.
 - Optional: `test` (normally from coreutils or busybox) for privileged type probing below unsearchable directories.
 - Optional: sudo 1.8.21+ with `Defaults timestamp_type = global` in sudoers to reuse cached credentials.
 
@@ -248,11 +248,16 @@ suda.same_path(left, right)      -- compare buffer names/paths
 suda.flavor()                    -- effective flavor
 ```
 
-`suda.read()` accepts `range` and `cmdarg` options.
+`suda.read()` accepts `range`, `cmdarg`, and `encoding` options.
+`encoding` selects an explicit file encoding (for example `utf-16le`).
 A typed `:0read suda://...` is recognized from the command line.
 Direct `:0read` from mappings or scripts is not detected;
 use `suda.read(..., { range = '0' })` instead.
 `suda.write()` and `suda.append()` also accept `cmdbang`.
+The Lua helpers update the alternate file and `'modified'` like the
+corresponding built-in commands, but they perform the I/O directly and do not
+fire `Buf*`/`File*` autocommands; use the commands or `suda://` buffers when
+autocommands are required.
 `read()` returns the `:read` message plus an info table with `endofline`, `fileformat`, `fileencoding`, and `bomb` fields;
 `write()` and `append()` return the `:write` message.
 All three throw an error on failure;
@@ -319,6 +324,11 @@ nvim --headless -u NONE -c 'helptags doc' -c 'qa!'
   slow or memory-heavy. Encoding detection scans readable files for UTF-8.
 - External commands have no timeout by default. Set `timeout` if a command may
   hang.
+- The append probe uses the `dd` found on Neovim's PATH. A different `dd`
+  selected by sudo's `secure_path` may require the `tee -a` fallback.
+- Smart edit preserves `++bin` and the options of a loaded buffer. Neovim does
+  not expose an explicit `++enc` after a failed read, so that option cannot be
+  recovered when smart edit reopens an unreadable file.
 
 ## License
 

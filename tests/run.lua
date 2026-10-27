@@ -10,6 +10,11 @@
 --
 -- This suite relies on POSIX permission modes and is Unix-only.
 
+if vim.uv.getuid ~= nil and vim.uv.getuid() == 0 then
+  io.write('suda tests must run as a non-root user (permission modes are used)\n')
+  vim.cmd('cquit 1')
+end
+
 local root = vim.g.suda_test_root or vim.fn.getcwd()
 local fake_sudo = root .. '/tests/bin/fake-sudo'
 

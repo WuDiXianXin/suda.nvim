@@ -282,8 +282,8 @@ local function strip_new_marker(message, path)
     return message
   end
 
-  -- The temporary file used to produce the message is always new, so the
-  -- first flag is [New] (translated).  Later flags such as [dos] or [noeol]
+  -- A whole-buffer write serializes into a new temporary file, so the first
+  -- flag is [New] (translated).  Later flags such as [dos] or [noeol]
   -- describe the real target and must be preserved.
   local rest = message:sub(#quoted + 1):gsub('^%s+', '')
   local stripped = rest:gsub('^%[[^%]]+%]%s*', '', 1)

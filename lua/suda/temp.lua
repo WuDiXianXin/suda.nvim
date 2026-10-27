@@ -108,13 +108,6 @@ local function file_tail_data(path, count)
   return data
 end
 
---- Validate UTF-8 without relying on iconv, which does not report invalid
---- input. When {allow_incomplete} is true, a truncated multi-byte sequence at
---- the end of a prefix is accepted.
---- @param data string
---- @param allow_incomplete boolean|nil
---- @return boolean
-
 M.make_tempdir = make_tempdir
 M.read_binary = read_binary
 M.write_binary = write_binary
