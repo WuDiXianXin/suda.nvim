@@ -56,6 +56,9 @@ end
 --- @return string
 function M.normalize_target(expr)
   local path = expand_special(M.strip_prefix(expr))
+  -- expand('%') and expand('#') return another suda:// name when the current
+  -- or alternate buffer is a suda buffer.
+  path = M.strip_prefix(path)
   if path == '' then
     error('[suda] empty path', 0)
   end
@@ -65,7 +68,8 @@ function M.normalize_target(expr)
   path = path:gsub('%$([%w_]+)', function(name)
     return vim.env[name] or ('$' .. name)
   end)
-  return vim.fs.abspath(expand_tilde(path))
+  path = M.strip_prefix(expand_tilde(path))
+  return vim.fs.abspath(path)
 end
 
 --- Whether two buffer names/paths refer to the same file.

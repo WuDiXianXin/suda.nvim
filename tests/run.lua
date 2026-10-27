@@ -1454,6 +1454,74 @@ H.test('normalize helpers handle prefixes and env vars', function()
   H.eq(io.normalize_target('suda://%'), current)
 end)
 
+H.test('normalize_target expands % inside a suda buffer', function()
+  H.login()
+  local path = H.visible('readonly.txt')
+  vim.cmd('SudaRead ' .. vim.fn.fnameescape(path))
+
+  local io = require('suda.io')
+  H.eq(io.normalize_target('%'), path)
+  H.eq(io.normalize_target('%:p'), path)
+  H.eq(io.normalize_target('suda://%'), path)
+end)
+
+H.test('relative suda:// names are resolved when the buffer is created', function()
+  H.login()
+  local rel = 'relative-read.txt'
+  add_fixture(rel, 'relative\n')
+  local path = H.visible(rel)
+  local old_cwd = vim.fn.getcwd()
+  local other = base .. '/relative-other'
+  mkdirp(other)
+
+  local ok, err = pcall(function()
+    vim.fn.chdir(vim.fs.dirname(path))
+    vim.cmd('edit ' .. vim.fn.fnameescape('suda://' .. rel))
+    H.eq(vim.api.nvim_buf_get_name(0), 'suda://' .. path)
+
+    vim.fn.chdir(other)
+    vim.api.nvim_buf_set_lines(0, 0, -1, false, { 'changed' })
+    vim.cmd('write')
+
+    H.eq(H.read_privileged(rel), 'changed\n')
+    H.eq(vim.uv.fs_stat(other .. '/' .. rel), nil)
+  end)
+  vim.fn.chdir(old_cwd)
+
+  if not ok then
+    error(err, 0)
+  end
+end)
+
+H.test(':saveas suda:// resolves relative targets', function()
+  H.login()
+  local source = H.visible('readable.txt')
+  local rel = 'saved-relative.txt'
+  local target = H.visible(rel)
+  local old_cwd = vim.fn.getcwd()
+  local other = base .. '/saveas-other'
+  mkdirp(other)
+
+  local ok, err = pcall(function()
+    vim.fn.chdir(vim.fs.dirname(source))
+    vim.cmd('edit ' .. vim.fn.fnameescape(source))
+    vim.cmd('saveas ' .. vim.fn.fnameescape('suda://' .. rel))
+    H.eq(vim.api.nvim_buf_get_name(0), 'suda://' .. target)
+
+    vim.fn.chdir(other)
+    vim.api.nvim_buf_set_lines(0, 0, -1, false, { 'saved changed' })
+    vim.cmd('write')
+
+    H.eq(H.read_privileged(rel), 'saved changed\n')
+    H.eq(vim.uv.fs_stat(other .. '/' .. rel), nil)
+  end)
+  vim.fn.chdir(old_cwd)
+
+  if not ok then
+    error(err, 0)
+  end
+end)
+
 H.test("a readable file ending with a newline keeps 'endofline'", function()
   H.login()
   local rel = 'readable-eol.txt'

@@ -44,6 +44,12 @@ local function current_buf(args)
   return vim.api.nvim_get_current_buf()
 end
 
+--- @param expr string
+--- @return string
+local function canonical_suda_name(expr)
+  return 'suda://' .. io.normalize_target(expr)
+end
+
 --- A buffer renamed with :saveas suda://... has not been through BufReadCmd,
 --- so give it the same options as a buffer opened through suda://.
 --- @param buf integer
@@ -70,6 +76,13 @@ function M.after_rename(args)
   local name = vim.api.nvim_buf_get_name(buf)
 
   if io.strip_prefix(name) ~= name then
+    local ok, canonical = pcall(canonical_suda_name, name)
+    if ok and canonical ~= name then
+      local renamed = pcall(vim.cmd, 'noautocmd file! ' .. vim.fn.fnameescape(canonical))
+      if renamed then
+        name = canonical
+      end
+    end
     ensure_suda_buffer(buf)
     return
   end
@@ -149,8 +162,19 @@ end
 
 function M.bufread(args)
   local buf = current_buf(args)
-  local target = args.file or args.match or vim.api.nvim_buf_get_name(buf)
-  local path = io.normalize_target(target)
+  local raw_target = args.file or args.match or vim.api.nvim_buf_get_name(buf)
+  local path = io.normalize_target(raw_target)
+  local target = 'suda://' .. path
+
+  -- Buffer names are resolved once, when the buffer is created.  Keeping a
+  -- relative or unresolved suda:// name would make later writes depend on the
+  -- current working directory.
+  if vim.api.nvim_buf_get_name(buf) ~= target then
+    local ok, err = pcall(vim.cmd, 'noautocmd file! ' .. vim.fn.fnameescape(target))
+    if not ok then
+      error(('[suda] failed to normalize buffer name: %s'):format(err), 0)
+    end
+  end
 
   local missing = false
   local ok, err = pcall(function()
