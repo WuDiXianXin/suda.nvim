@@ -307,6 +307,11 @@ local function has_dd_append()
     return dd_append_supported
   end
 
+  local timeout = config.get().timeout
+  if timeout == nil then
+    timeout = 5000
+  end
+
   local dir = temp.make_tempdir()
   local source = dir .. '/source'
   local target = dir .. '/target'
@@ -321,7 +326,7 @@ local function has_dd_append()
         'bs=1',
         'oflag=append',
         'conv=notrunc',
-      }, { text = true, timeout = 5000 })
+      }, { text = true, timeout = timeout })
       :wait()
     if res == nil or res.code ~= 0 or (res.signal ~= nil and res.signal ~= 0) then
       return false
@@ -347,7 +352,7 @@ local function tee_to_target(tempfile, path, append)
     argv[#argv + 1] = '-a'
   end
   argv[#argv + 1] = path
-  runner.run(argv, { stdin = temp.read_binary(tempfile) })
+  runner.run(argv, { stdin = temp.read_binary(tempfile), stdout = false })
 end
 
 --- @param tempfile string

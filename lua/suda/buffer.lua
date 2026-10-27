@@ -20,15 +20,14 @@ function M.record_cmdline(cmdline)
   cmdline = vim.trim(cmdline:gsub('^%s*:', ''))
   if cmdline ~= '' and vim.fn.match(cmdline, [[^0r\%[ead]\>]]) == 0 then
     last_cmdline = cmdline
+    vim.schedule(function()
+      if cmdline_generation == generation then
+        last_cmdline = nil
+      end
+    end)
   else
     last_cmdline = nil
   end
-
-  vim.schedule(function()
-    if cmdline_generation == generation then
-      last_cmdline = nil
-    end
-  end)
 end
 
 --- Clear remembered command-line state.  Intended for tests.

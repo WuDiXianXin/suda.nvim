@@ -134,8 +134,13 @@ end
 --- @param input string|nil
 --- @return string stdout
 function M.system(cmd, input)
-  if type(cmd) ~= 'table' then
-    error('[suda] system() expects a list of arguments', 0)
+  if type(cmd) ~= 'table' or #cmd == 0 then
+    error('[suda] system() expects a non-empty list of arguments', 0)
+  end
+  for _, arg in ipairs(cmd) do
+    if type(arg) ~= 'string' then
+      error('[suda] system() arguments must be strings', 0)
+    end
   end
   local res = runner.run(cmd, { stdin = input })
   return res.stdout

@@ -157,8 +157,16 @@ function M.get()
     config[key] = value
   end
 
+  if type(config.executable) ~= 'string' or config.executable == '' then
+    error('[suda] executable must be a non-empty string', 0)
+  end
+  if type(config.prompt) ~= 'string' then
+    error('[suda] prompt must be a string', 0)
+  end
   if config.prompt_password == nil then
     config.prompt_password = default_prompt_password
+  elseif type(config.prompt_password) ~= 'function' then
+    error('[suda] prompt_password must be a function', 0)
   end
 
   config.noninteractive = tobool(config.noninteractive) == true

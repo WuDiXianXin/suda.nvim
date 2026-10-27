@@ -51,11 +51,8 @@ local function spawn(argv, opts)
 end
 
 local function trim_detail(res)
-  local detail = res.stderr
-  if detail == nil or detail == '' then
-    detail = res.stdout
-  end
-  detail = vim.trim(detail or '')
+  -- Do not fall back to stdout: it can contain data from privileged files.
+  local detail = vim.trim(res.stderr or '')
   if #detail > 2000 then
     detail = detail:sub(1, 2000) .. '...'
   end
@@ -116,6 +113,9 @@ local function run_command(cmd, opts, check)
     end
     if not succeeded(probe) then
       local password = c.prompt_password(c.prompt)
+      if password ~= nil and type(password) ~= 'string' then
+        error('[suda] prompt_password must return a string, nil, or an empty string', 0)
+      end
       if password == nil or password == '' then
         error('[suda] cancelled', 0)
       end
@@ -153,6 +153,9 @@ local function run_command(cmd, opts, check)
   if opts.cwd ~= nil then
     sys_opts.cwd = opts.cwd
   end
+  if opts.stdout ~= nil then
+    sys_opts.stdout = opts.stdout
+  end
   if c.timeout ~= nil then
     sys_opts.timeout = c.timeout
   end
@@ -170,7 +173,7 @@ end
 --- command is `sudo -n -- {cmd...}` after authenticating via `sudo -v`.
 ---
 --- @param cmd string[]
---- @param opts table|nil { stdin?: string, cwd?: string }
+--- @param opts table|nil { stdin?: string, cwd?: string, stdout?: boolean }
 --- @return vim.SystemCompleted
 function M.run(cmd, opts)
   return run_command(cmd, opts or {}, true)
@@ -179,7 +182,7 @@ end
 --- Run a command and return its result even when it exits non-zero.
 --- Authentication, spawn, and timeout errors still throw.
 --- @param cmd string[]
---- @param opts table|nil { stdin?: string, cwd?: string }
+--- @param opts table|nil { stdin?: string, cwd?: string, stdout?: boolean }
 --- @return vim.SystemCompleted
 function M.probe(cmd, opts)
   return run_command(cmd, opts or {}, false)

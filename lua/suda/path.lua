@@ -147,6 +147,15 @@ local function probe_code(args)
   if res.signal ~= nil and res.signal ~= 0 then
     return nil
   end
+  -- `test` uses 0/1 for its result and prints nothing.  Any output means the
+  -- status comes from something else (for example sudo failing to
+  -- authenticate, or `test` not being found), so do not interpret it.
+  if res.code ~= 0 and res.code ~= 1 then
+    return nil
+  end
+  if (res.stderr or '') ~= '' or (res.stdout or '') ~= '' then
+    return nil
+  end
   return res.code
 end
 

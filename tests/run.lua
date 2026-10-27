@@ -388,6 +388,23 @@ H.test('config merges legacy globals and setup options', function()
   H.eq(c.smart_edit, false)
 end)
 
+H.test('config rejects invalid legacy values', function()
+  local config = require('suda.config')
+  config.reset()
+
+  vim.g['suda#executable'] = 123
+  local ok, err = pcall(config.get)
+  H.eq(ok, false)
+  H.contains(tostring(err), 'executable must be a non-empty string')
+  vim.g['suda#executable'] = nil
+
+  vim.g['suda#prompt'] = 42
+  ok, err = pcall(config.get)
+  H.eq(ok, false)
+  H.contains(tostring(err), 'prompt must be a string')
+  vim.g['suda#prompt'] = nil
+end)
+
 H.test('config warns about unknown options and rejects invalid values', function()
   local config = require('suda.config')
 
@@ -1380,6 +1397,21 @@ H.test('noninteractive mode does not prompt', function()
   )
 end)
 
+H.test('noninteractive authentication failures are not reported as missing files', function()
+  H.setup({ noninteractive = true })
+  H.logout()
+  local rel = 'unsearchable-auth/secret.txt'
+  add_fixture(rel, 'secret\n')
+
+  with_unsearchable_dir('unsearchable-auth', function()
+    local ok, err = pcall(require('suda').read, H.visible(rel))
+
+    H.eq(ok, false)
+    H.ok(not tostring(err):find('file not found', 1, true), 'must not report a missing file')
+    H.contains(tostring(err), 'password')
+  end)
+end)
+
 H.test('a wrong password fails authentication without running cat', function()
   H.logout()
   H.prompt_reply = 'wrong'
@@ -1419,6 +1451,43 @@ H.test('an empty password cancels the operation', function()
   H.eq(#H.prompts, 1)
   H.eq(#H.log(), 1)
   H.eq(H.log()[1].argv[4], 'true')
+end)
+
+H.test('prompt_password must return a string or nil', function()
+  H.setup({
+    prompt_password = function()
+      return 42
+    end,
+  })
+  H.logout()
+
+  local ok, err = pcall(require('suda').system, { 'true' })
+
+  H.eq(ok, false)
+  H.contains(tostring(err), 'prompt_password')
+  H.eq(#H.log(), 1)
+end)
+
+H.test('system() validates its argv list', function()
+  local suda = require('suda')
+
+  local ok, err = pcall(suda.system, {})
+  H.eq(ok, false)
+  H.contains(tostring(err), 'non-empty list')
+
+  ok, err = pcall(suda.system, { 'true', 1 })
+  H.eq(ok, false)
+  H.contains(tostring(err), 'arguments must be strings')
+end)
+
+H.test('system() failures do not expose stdout', function()
+  H.login()
+
+  local ok, err = pcall(require('suda').system, { 'sh', '-c', 'printf secret; exit 1' })
+
+  H.eq(ok, false)
+  H.contains(tostring(err), 'exit 1')
+  H.eq(tostring(err):find('secret', 1, true), nil)
 end)
 
 H.test('system() and systemlist() run argv safely', function()
@@ -1580,6 +1649,38 @@ H.test(':saveas suda:// resolves relative targets', function()
     H.eq(vim.uv.fs_stat(other .. '/' .. rel), nil)
   end)
   vim.fn.chdir(old_cwd)
+
+  if not ok then
+    error(err, 0)
+  end
+end)
+
+H.test('messages replace temporary paths that are abbreviated with ~', function()
+  H.login()
+  local rel = 'message-home-tmp.txt'
+  add_fixture(rel, 'old\n')
+  local target = H.visible(rel)
+  local home_tmp = vim.fn.stdpath('cache') .. '/suda-home-tmp'
+  local home_tmp_display = vim.fn.fnamemodify(home_tmp, ':~')
+  mkdirp(home_tmp)
+
+  local old_tmp = vim.env.TMPDIR
+  vim.env.TMPDIR = home_tmp
+  local ok, err = pcall(function()
+    H.normal_buffer({ 'new' })
+    vim.api.nvim_buf_set_name(0, target)
+    vim.bo.modified = true
+    local message = require('suda').write(target)
+    H.contains(message, vim.fn.fnamemodify(target, ':~'))
+    H.ok(not message:find(home_tmp_display, 1, true), 'write message used the temp path')
+
+    H.normal_buffer({})
+    local read_message = require('suda').read('suda://' .. target, { range = '0' })
+    H.contains(read_message, vim.fn.fnamemodify(target, ':~'))
+    H.ok(not read_message:find(home_tmp_display, 1, true), 'read message used the temp path')
+  end)
+  vim.env.TMPDIR = old_tmp
+  vim.fn.delete(home_tmp, 'rf')
 
   if not ok then
     error(err, 0)
@@ -1872,12 +1973,16 @@ end)
 
 H.test(':checkhealth suda runs and reports the executable', function()
   H.login()
+  -- config.get() would report smart edit as enabled, but setup() was called
+  -- with it disabled.  Health must describe the actual state.
+  vim.g.suda_smart_edit = 1
 
   local ok, err = pcall(vim.cmd, 'checkhealth suda')
   H.eq(ok, true, tostring(err))
 
   local found = false
   local found_test = false
+  local found_smart_edit = false
   for _, buf in ipairs(vim.api.nvim_list_bufs()) do
     if vim.api.nvim_buf_is_valid(buf) then
       local text = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), '\n')
@@ -1887,10 +1992,16 @@ H.test(':checkhealth suda runs and reports the executable', function()
       if text:find('test executable found', 1, true) then
         found_test = true
       end
+      if text:find('smart_edit is disabled', 1, true) then
+        found_smart_edit = true
+      end
     end
   end
   H.ok(found, 'health output should mention suda and the executable')
-  H.ok(found_test, 'health output should mention the test executable')
+  if vim.fn.executable('test') == 1 then
+    H.ok(found_test, 'health output should mention the test executable')
+  end
+  H.ok(found_smart_edit, 'health output should reflect the actual smart edit state')
 end)
 
 -------------------------------------------------------------------------------

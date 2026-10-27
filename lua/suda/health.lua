@@ -2,6 +2,7 @@ local M = {}
 
 local config = require('suda.config')
 local runner = require('suda.runner')
+local smart_edit = require('suda.smart_edit')
 
 local function run(argv)
   local ok, proc = pcall(vim.system, argv, { text = true, timeout = 5000 })
@@ -91,7 +92,7 @@ function M.check()
     )
   end
 
-  if c.smart_edit then
+  if smart_edit.is_enabled() then
     vim.health.info('smart_edit is enabled; unreadable/unwritable files may prompt for sudo')
   else
     vim.health.info('smart_edit is disabled')

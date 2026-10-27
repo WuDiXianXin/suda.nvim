@@ -3,6 +3,7 @@ local M = {}
 local path = require('suda.path')
 
 local generation = 0
+local smart_edit_enabled = false
 
 --- Whether the nearest existing ancestor directory of {path} is writable.
 ---
@@ -180,6 +181,7 @@ end
 function M.setup(enabled)
   generation = generation + 1
   local my_generation = generation
+  smart_edit_enabled = enabled == true
 
   local group = vim.api.nvim_create_augroup('suda_smart_edit', { clear = true })
   if not enabled then
@@ -201,6 +203,9 @@ function M.setup(enabled)
   })
 end
 
+M.is_enabled = function()
+  return smart_edit_enabled
+end
 M.on_bufenter = on_bufenter
 M.on_bufadd = on_bufadd
 M.switch_to_suda = switch_to_suda
