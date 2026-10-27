@@ -247,7 +247,6 @@ function M.bufread(args)
             end
           end
         end
-        vim.cmd('filetype detect')
       end)
 
       vim.bo[buf].undolevels = undolevels

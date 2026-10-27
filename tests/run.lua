@@ -1162,6 +1162,29 @@ H.test('modelines are applied after BufReadPost', function()
   end
 end)
 
+H.test(':filetype off is respected for suda buffers', function()
+  H.login()
+  local first = 'filetype-on.lua'
+  local second = 'filetype-off.lua'
+  add_fixture(first, 'return 1\n')
+  add_fixture(second, 'return 2\n')
+
+  local ok, err = pcall(function()
+    vim.cmd('filetype on')
+    vim.cmd('edit ' .. vim.fn.fnameescape('suda://' .. H.visible(first)))
+    H.eq(vim.bo.filetype, 'lua')
+
+    vim.cmd('filetype off')
+    vim.cmd('edit ' .. vim.fn.fnameescape('suda://' .. H.visible(second)))
+    H.eq(vim.bo.filetype, '')
+  end)
+  vim.cmd('filetype on')
+
+  if not ok then
+    error(err, 0)
+  end
+end)
+
 H.test('an explicit ++ff is not overridden by autodetection', function()
   H.login()
   local path = H.visible('crlf-explicit.txt')
@@ -1238,6 +1261,21 @@ H.test('smart edit switches read-only files to suda://', function()
 
   H.eq(vim.api.nvim_buf_get_name(0), 'suda://' .. path)
   H.eq(vim.api.nvim_buf_get_lines(0, 0, -1, false), { 'readonly user' })
+end)
+
+H.test('smart edit preserves ++bin when switching to suda://', function()
+  H.setup({ smart_edit = true })
+  H.login()
+  local path = H.visible('binary.bin')
+
+  vim.cmd('edit ++bin ' .. vim.fn.fnameescape(path))
+  H.wait_for(function()
+    return vim.api.nvim_buf_get_name(0) == 'suda://' .. path
+  end, 'smart edit did not switch the binary file')
+
+  H.eq(vim.bo.binary, true)
+  vim.cmd('write')
+  H.eq(H.read_privileged('binary.bin'), 'A\0B\r\nC')
 end)
 
 H.test('smart edit leaves writable and new writable files alone', function()

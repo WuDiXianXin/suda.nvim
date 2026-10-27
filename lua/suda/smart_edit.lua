@@ -96,13 +96,30 @@ local function switch_to_suda(buf)
 
   vim.b[buf].suda_smart_edit_checked = true
   local target = 'suda://' .. name
+  local options = {}
+  local readable = vim.fn.filereadable(name) == 1
+  if vim.bo[buf].binary then
+    options[#options + 1] = '++bin'
+  else
+    local encoding = vim.bo[buf].fileencoding
+    if encoding ~= '' then
+      options[#options + 1] = '++enc=' .. encoding
+    end
+    local fileformat = vim.bo[buf].fileformat
+    -- A failed read leaves 'fileformat' at its default "unix" value.  Passing
+    -- that as an explicit option would prevent suda from detecting the real
+    -- format, so only forward it when it is meaningful.
+    if fileformat ~= '' and (readable or fileformat ~= 'unix') then
+      options[#options + 1] = '++ff=' .. fileformat
+    end
+  end
   local ok, err = pcall(function()
-    vim.api.nvim_cmd({
-      cmd = 'edit',
-      args = { target },
-      mods = { keepalt = true, keepjumps = true },
-      magic = { file = false, bar = false },
-    }, {})
+    local command = 'keepalt keepjumps edit'
+    for _, option in ipairs(options) do
+      command = command .. ' ' .. option
+    end
+    command = command .. ' ' .. vim.fn.fnameescape(target)
+    vim.api.nvim_cmd(vim.api.nvim_parse_cmd(command, {}), {})
   end)
 
   if not ok then
