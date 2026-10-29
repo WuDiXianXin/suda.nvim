@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation / 文档
+    url: https://github.com/WuDiXianXin/suda.nvim#readme
+    about: Read README and :help suda first / 请先阅读 README 与 :help suda
+  - name: Security policy / 安全政策
+    url: https://github.com/WuDiXianXin/suda.nvim/security/policy
+    about: Report security issues privately — do NOT open a public issue / 请私下报告安全问题，勿公开提交

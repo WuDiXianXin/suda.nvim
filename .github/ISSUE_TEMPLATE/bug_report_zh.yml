@@ -1,0 +1,102 @@
+name: "缺陷报告 (Bug report · 中文)"
+description: "报告崩溃、读写失败、认证错误或意外行为"
+title: "[Bug]: "
+labels: ["bug", "lang:zh"]
+body:
+  - type: input
+    id: nvim-version
+    attributes:
+      label: Neovim 版本
+      description: 执行 `:version` 的第一行
+      placeholder: "NVIM v0.12.0"
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: 操作系统
+      placeholder: "macOS 15.1 / Ubuntu 24.04 / Arch Linux"
+    validations:
+      required: true
+
+  - type: input
+    id: plugin-version
+    attributes:
+      label: suda.nvim 版本
+      description: tag 或 commit hash（请尽量先在最新 `main` 上复现）
+      placeholder: "main @ abc1234"
+    validations:
+      required: true
+
+  - type: textarea
+    id: checkhealth
+    attributes:
+      label: "`:checkhealth suda` 输出"
+      description: |
+        必填。提交前请先运行 `:checkhealth suda` 并粘贴完整输出。
+        若完全无法运行，请说明原因。
+        请对主机名、用户名、密码、token 及其他敏感信息进行脱敏。
+      render: shell
+    validations:
+      required: true
+
+  - type: dropdown
+    id: privilege
+    attributes:
+      label: 提权工具
+      options:
+        - sudo
+        - sudo-rs
+        - doas
+        - 其他 (custom)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: smart-edit
+    attributes:
+      label: 是否启用了 `smart_edit`？
+      options:
+        - "是"
+        - "否"
+        - "不确定"
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: 复现步骤
+      description: 请尽量给出最小复现
+      placeholder: |
+        1. require('suda').setup({ smart_edit = true })
+        2. :e /etc/hosts
+        3. 修改后 :w
+        4. 出现错误 …
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望行为
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际行为
+      description: 完整错误信息、相关 `:messages` 内容
+    validations:
+      required: true
+
+  - type: textarea
+    id: config
+    attributes:
+      label: 相关配置与补充信息
+      description: setup() 选项或 g:suda_* 变量；是否仅 root 文件、不可搜索目录（如 /root）、++bin/++enc、大文件等
+      render: lua
+    validations:
+      required: false

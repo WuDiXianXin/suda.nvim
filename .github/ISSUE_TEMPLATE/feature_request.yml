@@ -1,0 +1,49 @@
+name: "Feature request (English)"
+description: "Suggest a new feature or improvement"
+title: "[Feature]: "
+labels: ["enhancement", "lang:en"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or motivation
+      description: What is hard or missing today?
+      placeholder: "e.g. I need to edit protected files on Windows with gsudo"
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: How should it behave? Any API shape in mind?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+    validations:
+      required: false
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Primary platform
+      options:
+        - Linux
+        - macOS
+        - Windows
+        - All / not specific
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Additional context
+      description: Willing to open a PR? References to other plugins?
+    validations:
+      required: false

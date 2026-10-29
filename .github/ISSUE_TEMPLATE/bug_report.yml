@@ -1,0 +1,102 @@
+name: "Bug report (English)"
+description: "Report a crash, failed read/write, auth error, or unexpected behavior"
+title: "[Bug]: "
+labels: ["bug", "lang:en"]
+body:
+  - type: input
+    id: nvim-version
+    attributes:
+      label: Neovim version
+      description: First line of `:version`
+      placeholder: "NVIM v0.12.0"
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: "macOS 15.1 / Ubuntu 24.04 / Arch Linux"
+    validations:
+      required: true
+
+  - type: input
+    id: plugin-version
+    attributes:
+      label: suda.nvim version
+      description: Tag or commit hash (please try the latest `main` first)
+      placeholder: "main @ abc1234"
+    validations:
+      required: true
+
+  - type: textarea
+    id: checkhealth
+    attributes:
+      label: Output of `:checkhealth suda`
+      description: |
+        Required. Run `:checkhealth suda` before filing and paste the full output.
+        If it cannot run at all, explain why instead.
+        Redact hostname, username, passwords, tokens, and any other secrets.
+      render: shell
+    validations:
+      required: true
+
+  - type: dropdown
+    id: privilege
+    attributes:
+      label: Privilege command
+      options:
+        - sudo
+        - sudo-rs
+        - doas
+        - custom / other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: smart-edit
+    attributes:
+      label: Is `smart_edit` enabled?
+      options:
+        - "Yes"
+        - "No"
+        - "Not sure"
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps help a lot
+      placeholder: |
+        1. require('suda').setup({ smart_edit = true })
+        2. :e /etc/hosts
+        3. Edit and :w
+        4. Error appears …
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Full error text and relevant `:messages` lines
+    validations:
+      required: true
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Relevant config & additional context
+      description: setup() options or g:suda_* variables; root-only paths, unsearchable dirs (e.g. /root), ++bin/++enc, large files, etc.
+      render: lua
+    validations:
+      required: false

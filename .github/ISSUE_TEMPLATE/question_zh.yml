@@ -1,0 +1,33 @@
+name: "使用提问 (Question · 中文)"
+description: "用法、配置、sudo/doas 相关疑问（非明确缺陷）"
+title: "[Question]: "
+labels: ["question", "lang:zh"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        若已确认是程序错误，请改用 **缺陷报告 (Bug report)**。
+        提问前可先阅读 `:help suda` 与 README。
+
+  - type: textarea
+    id: question
+    attributes:
+      label: 你的问题
+    validations:
+      required: true
+
+  - type: textarea
+    id: tried
+    attributes:
+      label: 已尝试过的内容
+      description: 配置、命令、文档章节等
+    validations:
+      required: false
+
+  - type: input
+    id: nvim-os
+    attributes:
+      label: Neovim 版本与系统
+      placeholder: "NVIM 0.12.0 on macOS 15"
+    validations:
+      required: false

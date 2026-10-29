@@ -1,0 +1,33 @@
+name: "Question (English)"
+description: "Usage or configuration questions (not a confirmed bug)"
+title: "[Question]: "
+labels: ["question", "lang:en"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        If you are sure this is a bug, please use **Bug report** instead.
+        Check `:help suda` and the README first.
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+    validations:
+      required: true
+
+  - type: textarea
+    id: tried
+    attributes:
+      label: What you already tried
+      description: Config, commands, docs sections, etc.
+    validations:
+      required: false
+
+  - type: input
+    id: nvim-os
+    attributes:
+      label: Neovim version and OS
+      placeholder: "NVIM 0.12.0 on macOS 15"
+    validations:
+      required: false
